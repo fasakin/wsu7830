@@ -27,7 +27,14 @@ THRESHOLD_SWEEP_FILE = os.path.join(MODELS_DIR, "threshold_sweep.json")
 ROC_FILE = os.path.join(MODELS_DIR, "roc_data.npz")
 
 
-def list_image_files(folder):
+def list_image_files(folder:str):
+    """
+    Collects the paths for all the images in the folder specified
+    Args:
+        folder (str): The folder to look for the images
+    Returns:
+        list[str]: A sorted list containing the paths for all the images
+    """
     valid_exts = (".jpg", ".jpeg", ".png", ".bmp")
     files = []
     for name in os.listdir(folder):
@@ -38,10 +45,17 @@ def list_image_files(folder):
 
 
 def stratified_split():
-    # Split the training folder into train/val while preserving class ratios.
+    """
+    Split the training folder into train/val while preserving class ratios.
 
+    Returns:
+        tuple:  [0] Paths for training + testing (list[str])\n
+                [1] Labels used for training (float32)\n
+                [2] Paths for the Validation set (list[str])\n
+                [3] Validation set labels (float32)
+    """
     # Since the chest X-ray dataset is imbalanced (~3.9× more PNEUMONIA than NORMAL),
-    # a random split will be unrepresentative of the validation set. Using tratified split
+    # a random split will be unrepresentative of the validation set. Using stratified split
     # ensure each class is shuffled independently before slicing VAL_SPLIT off the top.
     
     normal_folder = os.path.join(DATA_DIR, "train", "NORMAL")
@@ -50,7 +64,7 @@ def stratified_split():
     normal_files = list_image_files(normal_folder)
     pneumonia_files = list_image_files(pneumonia_folder)
 
-    rng = np.random.default_rng(SEED)
+    rng = np.random.default_rng(SEED) # For consistent results
     rng.shuffle(normal_files)
     rng.shuffle(pneumonia_files)
 
@@ -87,8 +101,16 @@ def stratified_split():
     )
 
 
-def make_dataset_from_paths(paths, labels, shuffle=False):
-    # Build a tf.data pipeline from file paths and float32 labels.
+def make_dataset_from_paths(paths:list[str], labels:list, shuffle=False):
+    """
+    Build a tf.data pipeline from file paths and float32 labels.
+    Args:
+        paths (list[str]): Paths to the data
+        labels (list): Labels for the data
+        shuffle (bool): Weather the data should be shuffled
+    Returns:
+        ds (tf.data.Dataset): The newly created dataset
+    """
 
     # The images are decoded, resized to IMG_SIZE, and cast to float32 (raw pixel
     # values 0-255). MobileNetV2 preprocessing (scaling to [-1, 1]) is applied
@@ -101,7 +123,16 @@ def make_dataset_from_paths(paths, labels, shuffle=False):
     if shuffle:
         ds = ds.shuffle(buffer_size=len(paths), seed=SEED, reshuffle_each_iteration=True)
 
-    def load_image(path, label):
+    def load_image(path:str, label):
+        """
+        Loading the image into tensorflow
+        Args:
+            path (str): Image path
+            label: The label for the image
+        Returns:
+            tuple:  [0] The loaded image\n
+                    [1] The label of the image (float32)
+        """
         image = tf.io.read_file(path)
         image = tf.image.decode_image(image, channels=3, expand_animations=False)
         image = tf.image.resize(image, IMG_SIZE)
@@ -114,7 +145,12 @@ def make_dataset_from_paths(paths, labels, shuffle=False):
 
 
 def build_test_dataset():
-    # Test set is loaded separately (never seen during training or threshold selection)
+    """
+    Test set is loaded separately (never seen during training or threshold selection)
+    Returns:
+        tuple:  [0] The test dataset\n
+                [1] Test dataset class labels
+    """
     test_ds = tf.keras.utils.image_dataset_from_directory(
         os.path.join(DATA_DIR, "test"),
         image_size=IMG_SIZE,
@@ -128,6 +164,12 @@ def build_test_dataset():
 
 
 def inspect_labels(labels, name="dataset"):
+    """
+    Prints the number of NORMAL and PNEUMONIA label distribution
+    Args:
+        labels (list[int]): List holding the labels
+        name (str): Name of the dataset
+    """
     labels = np.array(labels).astype(int)
     n_normal = int(np.sum(labels == 0))
     n_pneumonia = int(np.sum(labels == 1))
@@ -135,20 +177,6 @@ def inspect_labels(labels, name="dataset"):
     print(f"\n{name} label distribution")
     print(f"NORMAL     : {n_normal}")
     print(f"PNEUMONIA  : {n_pneumonia}")
-
-
-def compute_class_weights(train_labels):
-    # Softer manual weights than the previous aggressive automatic weighting.
-    # NORMAL gets a higher weight (1.50) to compensate for the dataset imbalance
-    # (~1,341 NORMAL vs ~3,875 PNEUMONIA in the training fold).
-
-    class_weight = {
-        0: 1.50,  # NORMAL — upweighted due to fewer samples
-        1: 0.85,  # PNEUMONIA — slightly downweighted
-    }
-    print("Using class weights:", class_weight)
-    return class_weight
-
 
 class BalancedAccuracy(tf.keras.metrics.Metric):
     # Custom Keras metric: (Recall + Specificity) / 2.
@@ -191,14 +219,28 @@ class BalancedAccuracy(tf.keras.metrics.Metric):
 
 
 def focal_loss(alpha=ALPHA, gamma=GAMMA):
-    # Binary focal loss — down-weights easy (high-confidence) examples.
+    """
+    Binary focal loss — down-weights easy (high-confidence) examples.
 
-    # Standard cross-entropy treats all samples equally, which can let the
-    # majority class dominate. The modulating factor (1 - p_t)^gamma reduces
-    # the gradient contribution of well-classified samples so the model focuses
-    # on difficult / ambiguous X-rays.
-
+    Standard cross-entropy treats all samples equally, which can let the
+    majority class dominate. The modulating factor (1 - p_t)^gamma reduces
+    the gradient contribution of well-classified samples so the model focuses
+    on difficult / ambiguous X-rays.
+    Args:
+        alpha (float): Controls the down-weighting of easy examples by reducing their loss contribution
+        gamma (float): Balances class importance to address class imbalance, typically assigning higher weight to the rare class
+    Returns: 
+        function: The loss function with ALPHA and GAMMA applied
+    """
     def loss(y_true, y_pred):
+        """
+        Computes the loss function
+        Args:
+            y_true: The labels of the data
+            y_pred: The predictions by the model
+        Returns:
+            Tensor: The loss function applied in the form of a tensor
+        """
         y_true = tf.cast(y_true, tf.float32)
         y_pred = tf.clip_by_value(y_pred, 1e-7, 1.0 - 1e-7)     # Avoid log(0)
 
@@ -213,16 +255,22 @@ def focal_loss(alpha=ALPHA, gamma=GAMMA):
 
 
 def build_model():
-    # Construct a MobileNetV2 transfer-learning model for binary pneumonia detection.
+    """
+    Construct a MobileNetV2 transfer-learning model for binary pneumonia detection.
 
-    # Architecture:
-    #   Input → Augmentation → MobileNetV2 (frozen) → GAP → Dropout → Dense(sigmoid)
+    Architecture:
+       Input → Augmentation → MobileNetV2 (frozen) → GAP → Dropout → Dense(sigmoid)
 
-    # The base is frozen initially so only the classification head is trained.
-    # fine_tune_model() later unfreezes the top 80 layers for domain adaptation.
+    The base is frozen initially so only the classification head is trained.
+    fine_tune_model() later unfreezes the top 80 layers for domain adaptation.
 
-    # Light augmentation ideal for chest X-rays: flips are medically valid;
-    # rotation and zoom are kept small to avoid unrealistic distortions.
+    Light augmentation ideal for chest X-rays: flips are medically valid;
+    rotation and zoom are kept small to avoid unrealistic distortions.
+
+    Returns:
+        tuple:  [0] The model (tf.keras.Model)\n
+                [1] The base model with frozen neurons
+    """
     augmentation = tf.keras.Sequential(
         [
             layers.RandomFlip("horizontal"),
@@ -266,6 +314,14 @@ def build_model():
 
 
 def get_callbacks(stage_name="baseline"):
+    """
+    Callbacks for early stopping if metrics are not improving by epoch.
+
+    Args:
+        stage_name (str): Name of the file
+    Returns:
+        list: A list with all the callbacks for early stopping
+    """
     os.makedirs(MODELS_DIR, exist_ok=True)
 
     return [
@@ -295,14 +351,22 @@ def get_callbacks(stage_name="baseline"):
     ]
 
 
-def fine_tune_model(model, base, train_ds, val_ds, class_weight):
-    # Unfreeze the top 80 MobileNetV2 layers and continue training at a lower LR.
+def fine_tune_model(model:tf.keras.Model, base, train_ds, val_ds, class_weight:dict):
+    """
+    Trains the model on the unfreeze top 80 MobileNetV2 layers and continue training at a lower LR.
 
-    # Only the deeper layers (closer to the output) are unfrozen — they encode
-    # higher-level features that benefit most from domain adaptation to X-ray images.
-    # The very early layers (texture / edge detectors) remain frozen to preserve
-    # general low-level representations.
-    
+    Only the deeper layers (closer to the output) are unfrozen — they encode
+    higher-level features that benefit most from domain adaptation to X-ray images.
+    The very early layers (texture / edge detectors) remain frozen to preserve
+    general low-level representations.
+    Args:
+        model (tf.keras.Model): The model which will be fine tuned
+        base: The frozen model layers
+        train_ds: The training dataset
+        val_ds: The validation dataset
+        class_weight: The weight of each class
+    """
+    # Unfreeze the top 80 MobileNetV2 layers and continue training at a lower LR.
     print("\nStarting fine-tuning...")
 
     base.trainable = True
@@ -334,7 +398,17 @@ def fine_tune_model(model, base, train_ds, val_ds, class_weight):
 
 
 def compute_roc_points(labels, probs):
-    # Manually compute TPR/FPR pairs across all unique probability thresholds.
+    """
+    Manually compute TPR/FPR pairs across all unique probability thresholds.
+    Args:
+        labels (list): The labels of the dataset
+        probs (list): The model's prediction probability
+    Returns:
+        tuple:  [0] FalsePositiveRates\n
+                [1] TruePositiveRates\n
+                [2] Computed AUC
+    """
+    # 
     thresholds = np.unique(np.concatenate(([0.0], probs, [1.0])))
     thresholds = np.sort(thresholds)[::-1]
 
@@ -365,14 +439,23 @@ def compute_roc_points(labels, probs):
     return fprs, tprs, float(auc)
 
 def find_best_threshold(model, val_ds, preferred_threshold=0.745, tolerance=0.002):
-    # Select the decision threshold on the validation set.
+    """
+    Select the decision threshold on the validation set.
 
-    # The search range is intentionally biased toward 0.745 because a higher threshold
-    # reduces false positives (flagging healthy patients as sick) at the cost of
-    # slightly lower recall. The tolerance parameter allows a nearby threshold to
-    # win over a marginally better one if it is closer to the preferred value,
-    # providing stability across training runs.
-    
+    The search range is intentionally biased toward 0.745 because a higher threshold
+    reduces false positives (flagging healthy patients as sick) at the cost of
+    slightly lower recall. The tolerance parameter allows a nearby threshold to
+    win over a marginally better one if it is closer to the preferred value,
+    providing stability across training runs.
+
+    Args:
+        model: The model for to find the threshold
+        val_ds: Validation Dataset
+        preferred_threshold (float): 
+        tolerance (float):
+    Returns:
+        tuple: best_threshold, best_bal_acc, sweep, labels, probs, fprs, tprs, roc_auc
+    """
     probs = model.predict(val_ds, verbose=1).flatten()
 
     labels = []
@@ -479,6 +562,12 @@ def find_best_threshold(model, val_ds, preferred_threshold=0.745, tolerance=0.00
 
 
 def save_threshold(threshold, balanced_accuracy):
+    """
+    Saves the threshold to THRESHOLD_FILE location
+    Args:
+        threshold (float): Threshold to be saved
+        balanced_accuracy (float): Accuracy to be saved
+    """
     os.makedirs(MODELS_DIR, exist_ok=True)
     with open(THRESHOLD_FILE, "w", encoding="utf-8") as f:
         json.dump(
@@ -493,12 +582,26 @@ def save_threshold(threshold, balanced_accuracy):
 
 
 def save_threshold_sweep(sweep):
+    """
+    Saves the sweep to the THRESHOLD_SWEEP_FILE location
+    Args:
+        sweep: The sweep to be saved
+    """
     with open(THRESHOLD_SWEEP_FILE, "w", encoding="utf-8") as f:
         json.dump(sweep, f, indent=2)
     print(f"Saved threshold sweep to: {THRESHOLD_SWEEP_FILE}")
 
 
 def save_roc_data(labels, probs, fprs, tprs, roc_auc):
+    """
+    Saves the ROC data into the ROC_FILE file
+    Args:
+        labels: Dataset labels
+        probs: The models predicted probabilities
+        fprs: False Positive Rates
+        tprs: True Postive Rates
+        roc_auc (float): The calculated ROC_AUC value
+    """
     np.savez(
         ROC_FILE,
         labels=labels,
@@ -523,7 +626,15 @@ def main():
 
     print("\nClass names:", class_names)
 
-    class_weight = compute_class_weights(train_labels)
+    # Softer manual weights than the previous aggressive automatic weighting.
+    # NORMAL gets a higher weight (1.50) to compensate for the dataset imbalance
+    # (~1,341 NORMAL vs ~3,875 PNEUMONIA in the training fold).
+    class_weight = {
+        0: 1.50,  # NORMAL — upweighted due to fewer samples
+        1: 0.85,  # PNEUMONIA — slightly downweighted
+    }
+
+    print("Using class weights:", class_weight)
 
     # Initial stage: Model construction and head training
     model, base = build_model()

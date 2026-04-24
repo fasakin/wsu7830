@@ -6,12 +6,17 @@ from config import DATA_DIR
 KERAS_MODEL_PATH = os.path.join(MODELS_DIR, "baseline.keras")
 
 def build_inference_model():
-    # Rebuild the model architecture without the training-time augmentation layer.
+    """
+    Rebuild the model architecture without the training-time augmentation layer.
+    
+    The augmentation Sequential block (RandomFlip, RandomRotation, RandomZoom)
+    exists only during training and must be stripped before TFLite conversion because
+    it is not needed at inference and complicates INT8 quantization.
+    Weights are copied from the trained model after construction.
 
-    # The augmentation Sequential block (RandomFlip, RandomRotation, RandomZoom)
-    # exists only during training and must be stripped before TFLite conversion because
-    # it is not needed at inference and complicates INT8 quantization.
-    # Weights are copied from the trained model after construction.
+    Returns:
+        model: The inference model (mobilenetv2_pneumonia_inference)
+    """ 
     base = tf.keras.applications.MobileNetV2(
         input_shape=IMG_SIZE + (3,),
         include_top=False,
@@ -28,13 +33,17 @@ def build_inference_model():
     model = tf.keras.Model(inputs, outputs, name="mobilenetv2_pneumonia_inference")
     return model
 
-
 def representative_dataset():
-    # Produce 100 representative training images for INT8 calibration.
+    """
+    Produce 100 representative training images for INT8 calibration.
 
-    # The TFLite INT8 converter uses these samples to determine the activation
-    # ranges needed to quantize each layer. Using real training images produces
-    # better calibration than random noise. batch_size=1 is required by the API.
+    The TFLite INT8 converter uses these samples to determine the activation
+    ranges needed to quantize each layer. Using real training images produces
+    better calibration than random noise. batch_size=1 is required by the API.
+    Returns:
+        image_dataset: The images casted as a float32
+    """
+ 
     train_dir = os.path.join(DATA_DIR, "train")
 
     if not os.path.exists(train_dir):
@@ -51,7 +60,6 @@ def representative_dataset():
 
     for images, _ in ds:
         yield [tf.cast(images, tf.float32)]
-
 
 def main():
     if not os.path.exists(KERAS_MODEL_PATH):
@@ -83,7 +91,6 @@ def main():
         f.write(tflite_model)
 
     print(f"Saved TFLite model to: {TFLITE_MODEL_PATH}")
-
 
 if __name__ == "__main__":
     main()

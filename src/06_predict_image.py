@@ -10,7 +10,13 @@ THRESHOLD_FILE = os.path.join(MODELS_DIR, "best_threshold.json")
 
 
 def load_image(path):
-    # Load and resize to the same dimensions used during training (IMG_SIZE)
+    """
+    Load and resize to the same dimensions used during training (IMG_SIZE)
+    Args:
+        path (str): The image path
+    Returns:
+        image: The image casted as a tf.float32
+    """
     img = tf.keras.utils.load_img(path, target_size=IMG_SIZE)
     arr = tf.keras.utils.img_to_array(img)
     arr = np.expand_dims(arr, axis=0)  # Add batch dimension → shape (1, H, W, 3)
@@ -19,6 +25,12 @@ def load_image(path):
 
 
 def load_threshold():
+    """
+    Uses the THRESHOLD_FILE to retrieve the saved threshold. Will default to
+    0.5 if not found.
+    Returns:
+        threshold (float): The threshold for the model
+    """
     if os.path.exists(THRESHOLD_FILE):
         with open(THRESHOLD_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -27,6 +39,11 @@ def load_threshold():
 
 
 def load_model_safely():
+    """
+    Loads to model for prediction using KERAS_MODEL_PATH
+    Returns:
+        model: The loaded model
+    """
     # For inference, compilation is not needed
     return tf.keras.models.load_model(KERAS_MODEL_PATH, compile=False)
 

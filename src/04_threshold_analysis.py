@@ -9,10 +9,23 @@ PLOT_PATH = os.path.join(MODELS_DIR, "test_threshold_analysis.png")
 
 
 def safe_div(a, b):
+    """
+    Normal division except it will return 0 if b is 0
+    Args:
+        a (Number): Numerator
+        b (Number): Denominator
+    Returns:
+        Number (float): The result of the division
+    """
     return a / b if b != 0 else 0.0
 
 
 def load_model_for_inference():
+    """
+    Loads the model from MODEL_PATH
+    Returns:
+        model: The saved model
+    """
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
 
@@ -22,6 +35,12 @@ def load_model_for_inference():
 
 
 def load_test_dataset():
+    """
+    Helper function to load the test dataset located in DATA_DIR
+    Returns:
+        tuple:  [0] The test dataset\n
+                [1] Name of the classes
+    """
     ds = tf.keras.utils.image_dataset_from_directory(
         os.path.join(DATA_DIR, "test"),
         image_size=IMG_SIZE,
@@ -35,6 +54,18 @@ def load_test_dataset():
 
 
 def collect_labels_and_probs(model, ds):
+    """
+    Collect ground-truth labels by iterating the dataset before predicting,
+    since model.predict() returns probabilities without labels.
+
+    Args: 
+        model: The model that will make the predictions
+        ds: The dataset in which the model will make the predictions on
+    
+    Returns:
+        tuple:  [0] The true labels
+                [1] The models predicted probabilities
+    """
     labels = []
     for _, y in ds:
         labels.extend(y.numpy().flatten())
@@ -45,6 +76,15 @@ def collect_labels_and_probs(model, ds):
 
 
 def evaluate_threshold(labels, probs, threshold):
+    """
+    Tests the threshold to see what the model performance metrics are
+    Args: 
+        labels: The dataset true labels
+        probs: The models predicted probabilities
+        threshold: The point in which a probability is 1 or 0
+    Returns:
+        dict: A dictionary containing all performance metrics 
+    """
     # Compute all classification metrics for a single threshold value
     preds = (probs >= threshold).astype(int)
 

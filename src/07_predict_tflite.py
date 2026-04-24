@@ -10,6 +10,12 @@ THRESHOLD_FILE = os.path.join(MODELS_DIR, "best_threshold.json")
 
 
 def load_threshold():
+    """
+    Uses the THRESHOLD_FILE to retrieve the saved threshold. Will default to
+    0.5 if not found.
+    Returns:
+        threshold (float): The threshold for the model
+    """
     if os.path.exists(THRESHOLD_FILE):
         with open(THRESHOLD_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
@@ -18,6 +24,13 @@ def load_threshold():
 
 
 def load_image(image_path):
+    """
+    Load and resize to the same dimensions used during training (IMG_SIZE)
+    Args:
+        path (str): The image path
+    Returns:
+        image: The image casted as a tf.float32
+    """
     img = tf.keras.utils.load_img(image_path, target_size=IMG_SIZE)
     arr = tf.keras.utils.img_to_array(img)
     arr = np.expand_dims(arr, axis=0).astype(np.float32)
@@ -25,11 +38,17 @@ def load_image(image_path):
 
 
 def quantize_input(image_float, input_details):
-    # Convert a float32 image to the uint8 format expected by the INT8 model.
+    """
+    Convert a float32 image to the uint8 format expected by the INT8 model.
 
-    # During TFLite INT8 conversion, each tensor is assigned a scale and
-    # zero_point that map float values to the uint8 range [0, 255].
-    # Formula: uint8 = float / scale + zero_point
+    During TFLite INT8 conversion, each tensor is assigned a scale and
+    zero_point that map float values to the uint8 range [0, 255].
+    Formula: uint8 = float / scale + zero_point
+
+    Args:
+        image_float: The casted tf.float32 image
+        input_details: The TFLITE_MODEL details
+    """
     scale, zero_point = input_details["quantization"]
 
     if scale == 0:
@@ -41,11 +60,18 @@ def quantize_input(image_float, input_details):
 
 
 def dequantize_output(output_data, output_details):
-    # Convert the INT8 model's uint8 output back to a float32 probability.
+    """
+    Convert the INT8 model's uint8 output back to a float32 probability.
 
-    # Inverse of quantize_input: float = scale * (uint8 - zero_point)
-    # If scale == 0 the output was not quantized (e.g., float fallback), so
-    # we cast directly.
+    Inverse of quantize_input: float = scale * (uint8 - zero_point)
+    If scale == 0 the output was not quantized (e.g., float fallback), so
+    we cast directly.
+    Args:
+        output_data: The model's quantized raw data
+        output_details: The model's details
+    Returns:
+        out (float32): the models prediction
+    """
     scale, zero_point = output_details["quantization"]
 
     if scale == 0:
