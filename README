@@ -66,6 +66,17 @@ py -3.10 -m venv .venv
 pip install -r requirements.txt
 ```
 
+### Note: Apple Silicon Users
+
+Instead of using `requirements.txt`, run:
+
+```bash
+pip install tensorflow-macos
+pip install keras numpy matplotlib pillow
+```
+
+> Do not install `tensorflow-metal` — it causes crashes during fine-tuning on this TensorFlow version.
+
 ---
 
 ## How to Run the Project
@@ -164,8 +175,17 @@ Threshold optimization significantly improved performance on imbalanced data.
 ## Tested Environment
 
 - Python 3.10
-- TensorFlow 2.15
-- Windows OS
+- TensorFlow 2.15, Keras 2.15 (Windows/Linux) / TensorFlow-macos 2.12, Keras 2.12 (Apple Silicon)
+- Windows OS / macOS (Apple Silicon)
+
+---
+
+## Known Issues
+
+- `model.export()` fails with a `ReplicaContext` error on some systems when saving
+  after fine-tuning. Replaced with `tf.saved_model.save` using
+  `experimental_custom_gradients=False`. This only affects the SavedModel format —
+  all other scripts use `baseline.keras`.
 
 ---
 

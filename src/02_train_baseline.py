@@ -550,7 +550,14 @@ def main():
 
     # Save the final model (architecture + weights) for later inference and evaluation on the test set
     os.makedirs(MODELS_DIR, exist_ok=True)
-    model.export(BASELINE_MODEL_DIR)
+    #model.export(BASELINE_MODEL_DIR)
+    # Using tf.saved_model.save with experimental_custom_gradients=False
+    # to avoid ReplicaContext error when saving after fine-tuning
+    tf.saved_model.save(
+        model,
+        BASELINE_MODEL_DIR,
+        options=tf.saved_model.SaveOptions(experimental_custom_gradients=False)
+    )
     model.save(os.path.join(MODELS_DIR, "baseline.keras"))
     model.save_weights(os.path.join(MODELS_DIR, "baseline.weights.h5"))
 
